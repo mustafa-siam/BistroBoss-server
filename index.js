@@ -1,7 +1,8 @@
 const express = require('express')
 const cors = require('cors');
+const  jwt = require('jsonwebtoken')
 const app = express();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
 const port = process.env.PORT || 5000
 //middleware
@@ -32,6 +33,7 @@ async function run() {
     const menucollection=client.db('BistroDB').collection('menu')
     const reviwcollection=client.db('BistroDB').collection('reviews')
     const cartcollection=client.db('BistroDB').collection('carts')
+    const usercollection=client.db('BistroDB').collection('users')
     app.get('/menu',async(req,res)=>{
       const result=await menucollection.find().toArray();
       res.send(result)
@@ -41,13 +43,99 @@ async function run() {
       res.send(result)
     })
     app.get('/carts',async(req,res)=>{
-      const result=await cartcollection.find().toArray();
+      const email=req.query.email;
+      const query={email : email}
+      const result=await cartcollection.find(query).toArray();
+      res.send(result)
+    })
+    app.delete('/carts/:id',async(req,res)=>{
+      const id=req.params.id;
+      const query={_id : new ObjectId(id)}
+      const result=await cartcollection.deleteOne(query);
       res.send(result)
     })
     app.post('/carts',async(req,res)=>{
       const cart=req.body;
       const result=await cartcollection.insertOne(cart);
       res.send(result)
+    })
+    // user related api
+    app.post('/users',async(req,res)=>{
+      const user=req.body;
+      const query={email:user.email}
+      const existinguser=await usercollection.findOne(query)
+      if(existinguser){
+        return res.send({message:"User already exist",insertedId:null})
+      }
+      const result=await usercollection.insertOne(user)
+      res.send(result)
+    })
+    //middleware
+    const verifytoken=(req,res,next)=>{
+console.log('inside verify token',req.headers.authorization)
+if(!req.headers.authorization){
+  return res.status(401).send({message:'unauthorized access'})
+}
+const token=req.headers.authorization.split(' ')[1];
+jwt.verify(token,process.env.SECRET_TOKEN,(err,decoded)=>{
+  if(err){
+    return res.status(401).send({message:'unauthorized access'})
+  }
+  req.decoded=decoded;
+  next();
+})
+    }
+    const verifyadmin=async(req,res,next)=>{
+      const email=req.decoded.email;
+      const query={email:email}
+      const user=await usercollection.findOne(query);
+      const isAdmin=user?.role==='Admin';
+      if(!isAdmin){
+        return res.status(403).send({message:"forbidden access"})
+      }
+      next();
+    }
+     app.get('/users',verifytoken,async(req,res)=>{
+      const result=await usercollection.find().toArray();
+      res.send(result)
+    })
+    app.get('/users/admin/:email',verifytoken,async(req,res)=>{
+      const email=req.params.email;
+      if(email !==req.decoded.email){
+        return res.status(403).send({message:"forbidden access"})
+      }
+      const query={email:email};
+      const user=await usercollection.findOne(query)
+      let admin=false;
+      if(user){
+        admin=user?.role==='Admin'
+      }
+      res.send({admin})
+    })
+     app.delete('/users/:id',verifytoken,verifyadmin,async(req,res)=>{
+      const id=req.params.id;
+      const query={_id : new ObjectId(id)}
+      const result=await usercollection.deleteOne(query);
+      res.send(result)
+    })
+    app.patch('/users/admin/:id',verifytoken,verifyadmin,async(req,res)=>{
+      const id=req.params.id;
+      const query={_id:new ObjectId(id)}
+      const updatedoc={
+        $set:{
+             role:"Admin"
+        }
+      }
+      const result = await usercollection.updateOne(query, updatedoc);
+      res.send(result)
+    })
+    //jwt related api
+    app.post('/jwt',async(req,res)=>{
+      const user=req.body;
+      const token=jwt.sign(user,process.env.SECRET_TOKEN,{
+        expiresIn:"1h"
+      });
+      res.send({token})
     })
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
