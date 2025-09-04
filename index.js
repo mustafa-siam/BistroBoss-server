@@ -34,8 +34,38 @@ async function run() {
     const reviwcollection=client.db('BistroDB').collection('reviews')
     const cartcollection=client.db('BistroDB').collection('carts')
     const usercollection=client.db('BistroDB').collection('users')
+    //middleware
+    const verifytoken=(req,res,next)=>{
+console.log('inside verify token',req.headers.authorization)
+if(!req.headers.authorization){
+  return res.status(401).send({message:'unauthorized access'})
+}
+const token=req.headers.authorization.split(' ')[1];
+jwt.verify(token,process.env.SECRET_TOKEN,(err,decoded)=>{
+  if(err){
+    return res.status(401).send({message:'unauthorized access'})
+  }
+  req.decoded=decoded;
+  next();
+})
+    }
+    const verifyadmin=async(req,res,next)=>{
+      const email=req.decoded.email;
+      const query={email:email}
+      const user=await usercollection.findOne(query);
+      const isAdmin=user?.role==='Admin';
+      if(!isAdmin){
+        return res.status(403).send({message:"forbidden access"})
+      }
+      next();
+    }
     app.get('/menu',async(req,res)=>{
       const result=await menucollection.find().toArray();
+      res.send(result)
+    })
+    app.post('/menu',verifytoken,verifyadmin,async(req,res)=>{
+      const item=req.body;
+      const result=await menucollection.insertOne(item)
       res.send(result)
     })
     app.get('/review',async(req,res)=>{
@@ -70,32 +100,8 @@ async function run() {
       const result=await usercollection.insertOne(user)
       res.send(result)
     })
-    //middleware
-    const verifytoken=(req,res,next)=>{
-console.log('inside verify token',req.headers.authorization)
-if(!req.headers.authorization){
-  return res.status(401).send({message:'unauthorized access'})
-}
-const token=req.headers.authorization.split(' ')[1];
-jwt.verify(token,process.env.SECRET_TOKEN,(err,decoded)=>{
-  if(err){
-    return res.status(401).send({message:'unauthorized access'})
-  }
-  req.decoded=decoded;
-  next();
-})
-    }
-    const verifyadmin=async(req,res,next)=>{
-      const email=req.decoded.email;
-      const query={email:email}
-      const user=await usercollection.findOne(query);
-      const isAdmin=user?.role==='Admin';
-      if(!isAdmin){
-        return res.status(403).send({message:"forbidden access"})
-      }
-      next();
-    }
-     app.get('/users',verifytoken,async(req,res)=>{
+    
+     app.get('/users',verifytoken,verifyadmin,async(req,res)=>{
       const result=await usercollection.find().toArray();
       res.send(result)
     })
