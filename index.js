@@ -71,9 +71,24 @@ jwt.verify(token,process.env.SECRET_TOKEN,(err,decoded)=>{
     })
     app.get('/menu/:id',async(req,res)=>{
       const id=req.params.id
-      
-      const query={_id:id}
+      const query={_id:new ObjectId(id)}
       const result=await menucollection.findOne(query);
+      res.send(result)
+    })
+    app.patch('/menu/:id',async(req,res)=>{
+      const id=req.params.id
+      const item=req.body;
+      const query={_id:new ObjectId(id)}
+      const updateDoc = {
+      $set: {
+      name:item.name,
+      category:item.category,
+      price:item.price,
+      image:item.image,
+      recipe:item.recipe
+      },
+    };
+      const result=await menucollection.updateOne(query, updateDoc);
       res.send(result)
     })
     app.post('/menu',verifytoken,verifyadmin,async(req,res)=>{
