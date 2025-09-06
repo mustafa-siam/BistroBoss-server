@@ -4,6 +4,7 @@ const  jwt = require('jsonwebtoken')
 const app = express();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
+const stripe=require('stripe')(process.env.STRIPE_SECRET_KEY)
 const port = process.env.PORT || 5000
 //middleware
 app.use(cors({
@@ -34,6 +35,7 @@ async function run() {
     const reviwcollection=client.db('BistroDB').collection('reviews')
     const cartcollection=client.db('BistroDB').collection('carts')
     const usercollection=client.db('BistroDB').collection('users')
+    const paymentcollection=client.db('BistroDB').collection('payments')
     //middleware
     const verifytoken=(req,res,next)=>{
 console.log('inside verify token',req.headers.authorization)
@@ -170,6 +172,29 @@ jwt.verify(token,process.env.SECRET_TOKEN,(err,decoded)=>{
         expiresIn:"2h"
       });
       res.send({token})
+    })
+    //payment intent
+    app.post('/create-payment-intent',async(req,res)=>{
+      const {price}=req.body;
+      const amount=parseInt(price*100)
+      const paymentIntent = await stripe.paymentIntents.create({
+  amount: amount,
+  currency: 'usd',
+  payment_method_types:['card'],
+});
+res.send({
+  clientSecret:paymentIntent.client_secret
+})
+    })
+
+    app.post('/payments',async(req,res)=>{
+      const payment=req.body;
+      const paymentresult=await paymentcollection.insertOne(payment)
+      const query={_id:{
+        $in:payment.cartIds.map(id=>new ObjectId(id))
+      }}
+      const deleteresult=await cartcollection.deleteMany(query);
+      res.send({paymentresult,deleteresult})
     })
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
