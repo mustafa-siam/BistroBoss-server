@@ -38,7 +38,7 @@ async function run() {
     const paymentcollection=client.db('BistroDB').collection('payments')
     //middleware
     const verifytoken=(req,res,next)=>{
-console.log('inside verify token',req.headers.authorization)
+//console.log('inside verify token',req.headers.authorization)
 if(!req.headers.authorization){
   return res.status(401).send({message:'unauthorized access'})
 }
@@ -195,6 +195,70 @@ res.send({
       }}
       const deleteresult=await cartcollection.deleteMany(query);
       res.send({paymentresult,deleteresult})
+    })
+    app.get('/payments',verifytoken,async(req,res)=>{
+      const email=req.query.email;
+      if(email!==req.decoded.email){
+        return res.status(403).send({message:"forbidden access"})
+      }
+      const filter={email:email}
+      const result=await paymentcollection.find(filter).toArray();
+      res.send(result)
+    })
+    app.get('/admin-stats',verifytoken,verifyadmin,async(req,res)=>{
+      const users=await usercollection.estimatedDocumentCount()
+      const orders=await cartcollection.estimatedDocumentCount()
+      const menuitems=await menucollection.estimatedDocumentCount()
+      const result=await paymentcollection.aggregate([
+        {
+        $group:{
+          _id:null,
+          totalrevenue:{$sum:'$price'}
+        }
+      }]).toArray();
+      const totalrevenue=result.length>0?result[0].totalrevenue :0;
+      res.send({
+        users,orders,menuitems,totalrevenue
+      })
+    })
+    app.get('/order-stats',verifytoken,verifyadmin,async(req,res)=>{
+      const result=await paymentcollection.aggregate([
+          {
+            $unwind:'$menuitemids'
+          },
+          {
+      $addFields: {
+        menuitemids: { $toObjectId: "$menuitemids" }
+      }
+    },
+          {
+            $lookup:{
+              from:'menu',
+              localField:'menuitemids',
+              foreignField:'_id',
+              as:'menuitems'
+            }
+          },
+          {
+            $unwind:'$menuitems'
+          },
+          {
+            $group:{
+              _id:'$menuitems.category',
+              quantity:{$sum:1},
+              revenue:{$sum:'$menuitems.price'}
+            }
+          },
+          {
+            $project:{
+              _id:0,
+              category:'$_id',
+              quantity:'$quantity',
+              revenue:'$revenue'
+            }
+          }
+      ]).toArray();
+      res.send(result)
     })
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
